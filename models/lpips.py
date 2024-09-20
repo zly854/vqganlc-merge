@@ -118,10 +118,10 @@ class vgg16(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(vgg16, self).__init__()
         vgg = models.vgg16(pretrained = False)
-        vgg.load_state_dict(torch.load("/wangzedong/zly/VQGAN-LC/vqgan-gpt-lc/vgg16.pth"))
+        vgg.load_state_dict(torch.load("/wangzedong/zly/.cache/torchvision/vgg16.pth"))
         vgg_pretrained_features = vgg.features
         
-        #vgg_pretrained_features.load_state_dict(torch.load("/wangzedong/zly/VQGAN-LC/vqgan-gpt-lc/vgg16.pth"))
+        #vgg_pretrained_features.load_state_dict(torch.load("/wangzedong/zly/.cache/torchvision/vgg16.pth"))
         self.slice1 = torch.nn.Sequential()
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()

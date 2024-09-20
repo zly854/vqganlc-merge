@@ -2,17 +2,17 @@ import torch
 import torch.nn as nn 
 import torch.nn.functional as F
 import timm
-from timm.models.vision_transformer import Attention, Block, PatchEmbed
-import argparse
+from timm.models.vision_transformer import Block, PatchEmbed
 
 
 class Encoder(nn.Module):
-    def __init__(self,*, image_size = 224,embed_dim = 192,patch_size = 16,num_layers = 12,num_heads = 4):
+    def __init__(self, *, image_size=256, embed_dim=768, patch_size=16, num_layers=12, num_heads=12, **kwargs):
         super(Encoder,self).__init__()
+
         self.image_size = image_size
         self.embed_dim = embed_dim
         self.patch_size = patch_size
-        self.token_num = (image_size // patch_size) ** 2
+        self.num_tokens = (image_size // patch_size) ** 2
         self.patch_embed = PatchEmbed(
             img_size = image_size,patch_size = patch_size,in_chans = 3, embed_dim = embed_dim
             )
@@ -31,8 +31,10 @@ class Encoder(nn.Module):
                 act_layer=nn.GELU,
             ) for _ in range(num_layers)]
         )
-        self.cls_token = nn.Parameter(torch.zeros(1,1,embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.token_num + 1, embed_dim))     
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_tokens + 1, embed_dim))
+        self.norm = nn.LayerNorm(self.embed_dim)
+
     def forward(self,x):
         batch_size = x.shape[0]
         x = self.patch_embed(x)
@@ -43,5 +45,5 @@ class Encoder(nn.Module):
         x = x + pos_embed
         x = self.pos_drop(x)
         x = self.blocks(x)
-        #x = self.norm(x)
+        x = self.norm(x)
         return x

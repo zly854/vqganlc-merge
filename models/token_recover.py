@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 
 
-
-
 class Cross_Attention(nn.Module):
     def __init__(self, dim = 192, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., length=27):
         super().__init__()
@@ -38,16 +36,15 @@ class Cross_Attention(nn.Module):
 
 
 class k2l_recovery(nn.Module):
-    def __init__(self, merge_token_num = 77 , token_num = 256 ,embed_dim = 192 ,num_heads = 8):
+    def __init__(self, num_merge_tokens=77, num_tokens=256, embed_dim=192, num_heads=8):
         super().__init__()
-        self.cross_att = Cross_Attention(dim = embed_dim ,num_heads=num_heads,qkv_bias=True,attn_drop=0., proj_drop = 0.)
-        self.x_token = nn.Parameter(torch.zeros(token_num,embed_dim))
-
-
+        self.cross_att = Cross_Attention(dim=embed_dim, num_heads=num_heads,
+                                         qkv_bias=True, attn_drop=0., proj_drop=0.)
+        self.x_token = nn.Parameter(torch.zeros(num_tokens, embed_dim))
 
     def forward(self,x):
         bs, _, _ = x.shape
         self.x_token_expand = self.x_token.unsqueeze(0)
-        self.x_token_expand = self.x_token_expand.repeat(bs,1,1)
-        output = self.x_token_expand + self.cross_att(self.x_token_expand,x,x)
+        self.x_token_expand = self.x_token_expand.repeat(bs, 1, 1)
+        output = self.x_token_expand + self.cross_att(self.x_token_expand, x, x)
         return output

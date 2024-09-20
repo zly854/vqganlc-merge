@@ -1,0 +1,36 @@
+model:
+  learning_rate: 4.5e-06
+  target: models_vq.VQModel
+  params:
+    monitor: val/rec_loss
+    embed_dim: 256
+    enconfig:
+      image_size: 256
+      embed_dim: 768
+      num_layers: 12
+      num_heads: 12
+      patch_size: 16
+      head_dropout: 0.1
+    ddconfig:
+      type: 'cnn'
+      double_z: false
+      z_channels: 768
+      resolution: 256
+      in_channels: 3
+      out_ch: 3
+      ch: 128
+      ch_mult:
+      - 1
+      - 1
+      - 2
+      - 2
+      - 4
+      attn_resolutions:
+      - 16
+      num_res_blocks: 2
+      dropout: 0.0
+    k2lconfig:
+      num_merge_tokens: 137
+      num_tokens: 256
+      embed_dim: 768
+      num_heads: 8
