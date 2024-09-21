@@ -377,7 +377,10 @@ def main(args):
         # 获取模型的所有参数
         opt_ae = torch.optim.Adam(list(model_without_ddp.encoder.parameters())+
                                 list(model_without_ddp.decoder.parameters())+
+                                list(model_without_ddp.recovery.parameters())+
+                                list(model_without_ddp.cls_head.parameters())+
                                 list(model_without_ddp.tok_embeddings.parameters()), lr=args.lr, betas=(0.5, 0.9), eps=1e-7)
+
     opt_dist = torch.optim.Adam(model_without_ddp.discriminator.parameters(), lr=args.lr, betas=(0.5, 0.9), eps=1e-7)
 
     loss_scaler_ae = NativeScaler()
