@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-
+from collections import OrderedDict
+import einops
 
 class ResidualAttentionBlock(nn.Module):
     def __init__(
@@ -133,15 +134,19 @@ class Mlp(nn.Module):
         return x
 
 
+def _expand_token(token, batch_size: int):
+    return token.unsqueeze(0).expand(batch_size, -1, -1)
+
+    
 
 class TiTokDecoder(nn.Module):
-    def __init__(self, num_merge_tokens , num_rec_tokens , embed_dim , num_layers , num_heads ):
+    def __init__(self, num_merge_tokens = 137 , num_rec_tokens = 256, embed_dim = 768 , num_layers = 12, num_heads =12 ):
         super().__init__()
-        #self.config = config
         self.num_merge_tokens = num_merge_tokens
         self.num_rec_tokens = num_rec_tokens
         self.embed_dim = embed_dim
         self.num_layers = num_layers
+        self.num_heads = num_heads
         scale = self.embed_dim ** -0.5
         self.positional_embedding = nn.Parameter(
                 scale * torch.randn(self.num_rec_tokens, self.embed_dim))
@@ -149,89 +154,30 @@ class TiTokDecoder(nn.Module):
         self.transformer = nn.ModuleList()
         for i in range(self.num_layers):
             self.transformer.append(ResidualAttentionBlock(
-                self.width, self.num_heads, mlp_ratio=4.0
+                self.embed_dim, self.num_heads, mlp_ratio=4.0
             ))
-
-
-
-
-
-
-        #self.decoder_dim= decoder_dim
-        #self.decoder_embeding = nn.Linear(self.embed_dim,self.decoder_dim,bias = True)
-        #self.
-
-        #self.image_size = args.image_size
-        #self.patch_size = args.model.vq_model.vit_dec_patch_size
-        #self.grid_size = self.image_size // self.patch_size
-        #self.model_size = config.model.vq_model.vit_dec_model_size
-        #self.num_latent_tokens = config.model.vq_model.num_latent_tokens
-        #self.token_size = config.model.vq_model.token_size
-        self.width = {
-                "small": 512,
-                "base": 768,
-                "large": 1024,
-            }[self.model_size]
-        self.num_layers = {
-                "small": 8,
-                "base": 12,
-                "large": 24,
-            }[self.model_size]
-        self.num_heads = {
-                "small": 8,
-                "base": 12,
-                "large": 16,
-            }[self.model_size]
-
-        #self.decoder_embed = nn.Linear(
-           #self.token_size, self.width, bias=True)
-        scale = self.embed_dim ** -0.5
-        #self.class_embedding = nn.Parameter(scale * torch.randn(1, self.width))
-        self.positional_embedding = nn.Parameter(
-                scale * torch.randn(self.num_rec_tokens, self.width))
-        # add mask token and query pos embed
-        self.mask_token = nn.Parameter(scale * torch.randn(1, 1, self.width))
+        self.ln_post = nn.LayerNorm(self.embed_dim)
+        #self.ffn = nn.Sequential(
+            #nn.Conv2d(self.embed_dim, 2 * self.embed_dim, 1, padding=0, bias=True),
+            #nn.Tanh(),
+            #nn.Conv2d(2 * self.width, 1024, 1, padding=0, bias=True),
+        #)
+        self.mask_token = nn.Parameter(scale * torch.randn(1, 1, self.embed_dim))
         self.latent_token_positional_embedding = nn.Parameter(
             scale * torch.randn(self.num_merge_tokens, self.embed_dim))
-        self.ln_pre = nn.LayerNorm(self.width)
-        self.transformer = nn.ModuleList()
-        for i in range(self.num_layers):
-            self.transformer.append(ResidualAttentionBlock(
-                self.width, self.num_heads, mlp_ratio=4.0
-            ))
-        self.ln_post = nn.LayerNorm(self.width)
-
-        self.ffn = nn.Sequential(
-            nn.Conv2d(self.width, 2 * self.width, 1, padding=0, bias=True),
-            nn.Tanh(),
-            nn.Conv2d(2 * self.width, 1024, 1, padding=0, bias=True),
-        )
         self.conv_out = nn.Identity()
-    
     def forward(self, x):
-        #N, C, H, W = z_quantized.shape
-        #assert H == 1 and W == self.num_latent_tokens, f"{H}, {W}, {self.num_latent_tokens}"
-        #x = z_quantized.reshape(N, C*H, W).permute(0, 2, 1) # NLD
-        #x = self.decoder_embed(x)
-
-        batchsize, seq_len, _ = x.shape
-
+        batchsize, seq_len, _ = x.shape 
         mask_tokens = self.mask_token.repeat(batchsize, self.num_rec_tokens, 1).to(x.dtype)
-        #mask_tokens = torch.cat([_expand_token(self.class_embedding, mask_tokens.shape[0]).to(mask_tokens.dtype),
-                                    #mask_tokens], dim=1)
         mask_tokens = mask_tokens + self.positional_embedding.to(mask_tokens.dtype)
         x = x + self.latent_token_positional_embedding[:seq_len]
         x = torch.cat([mask_tokens, x], dim=1)
-        
         x = self.ln_pre(x)
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = x.permute(1, 0, 2)  
         for i in range(self.num_layers):
             x = self.transformer[i](x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
-        x = x[:, 1:1+self.grid_size**2] # remove cls embed
+        x = x.permute(1, 0, 2)  
+        x = x[:, 1:1+self.num_rec_tokens] 
         x = self.ln_post(x)
-        # N L D -> N D H W
-        x = x.permute(0, 2, 1).reshape(batchsize, self.width, self.grid_size, self.grid_size)
-        x = self.ffn(x.contiguous())
         x = self.conv_out(x)
         return x

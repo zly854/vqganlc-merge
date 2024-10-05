@@ -8,9 +8,9 @@ from models.lpips import LPIPS
 #from models.encoder_decoder import Encoder, Decoder, Decoder_Cross
 from models.vit_encoder import Encoder
 from models.decoder import ViTDecoder, CNNDecoder
-
+import torch.nn as nn
 import tome
-from models.token_recover import k2l_recovery as Recovery
+from models.source_recovery import source_recovery as Recovery
 from models.cls_head import MlpHead
 
 
@@ -58,7 +58,7 @@ class VQModel(torch.nn.Module):
 
         self.o_encoder = Encoder(**enconfig)
         self.encoder = apply_merge(self.o_encoder, args)
-        print(self.encoder._tome_info)
+        #print(self.encoder._tome_info)
         
         if ddconfig.pop('type', 'ViT').lower() == 'vit':
             self.decoder = ViTDecoder(**ddconfig)
@@ -72,7 +72,11 @@ class VQModel(torch.nn.Module):
                                                 ).apply(weights_init)
         
         embed_dim = args.embed_dim  # update embed_dim for VQ codebook
-        self.recovery = Recovery(**k2lconfig)
+        if args.merge_ratio != 0:
+            self.recovery = Recovery(**k2lconfig)
+
+        #self.recovery = Recovery(**k2lconfig)
+        self.projection = nn.Linear(embed_dim,embed_dim)
 
         self.perceptual_loss = LPIPS().eval()
         for param in self.perceptual_loss.parameters():
@@ -188,11 +192,12 @@ class VQModel(torch.nn.Module):
         #z = rearrange(z, 'b c h w -> b h w c').contiguous()
         z_flattened = z.view(-1, self.e_dim)
         # distances from z to embeddings e_j (z - e)^2 = z^2 + e^2 - 2 e * z
-
+        z_flattened = torch.nn.functional.normalize(z_flattened, dim=-1)
         if self.args.use_cblinear != 0:
             tok_embeddings_weight = self.codebook_projection(self.tok_embeddings.weight)
         else:
             tok_embeddings_weight = self.tok_embeddings.weight
+        tok_embeddings_weight = torch.nn.functional.normalize(tok_embeddings_weight, dim=-1)
 
         d = torch.sum(z_flattened ** 2, dim=1, keepdim=True) + \
             torch.sum(tok_embeddings_weight**2, dim=1) - 2 * \
@@ -243,13 +248,20 @@ class VQModel(torch.nn.Module):
         #encoder_feature = self.quant_conv(self.encoder(input))
         quant, qloss, [_, _, tk_labels], enc_h = self.encode(input)
 
+        #quant doesnt have cls token
+        #source = self.encoder._tome_info["source"]
+        #source = self.encoder_tome_info["source"]
+        #source = source[:,1:,1:]
+
         ###Training GPT
         if self.stage == 2: 
             return quant, tk_labels.view(input.shape[0], -1)
         
 
         if self.merge_ratio != 0 :
-            quant = self.recovery(quant)
+            source = self.encoder._tome_info["source"]
+            source = source[:,1:,1:]
+            quant = self.recovery(quant,source)
 
         #quant = self.recovery(quant)
         
@@ -297,10 +309,12 @@ class VQModel(torch.nn.Module):
         #h = self.quant_conv(self.encoder(input))
         h = self.encoder(input)
         # if self.e_dim == 768 and self.args.tuning_codebook != -1:
+        h_none_cls = h[:,1:,:]
+        h_none_cls = self.projection(h_none_cls)
         if self.args.tuning_codebook != -1:
-            h_q = h / h.norm(dim=1, keepdim=True)
+            h_q = h_none_cls / h_none_cls.norm(dim=1, keepdim=True)
         else:
-            h_q = h.clone()
+            h_q = h_none_cls.clone()
         quant, emb_loss, info = self.quantize(h_q)
         return quant, emb_loss, info, h
 
